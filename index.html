@@ -1,0 +1,704 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Ortsmodell">
+<meta name="theme-color" content="#F8FAFA">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Ctext y=%22.9em%22 font-size=%2290%22%3E🏘️%3C/text%3E%3C/svg%3E">
+<title>Ortsmodell – 3D-Druck aus LoD2-Daten</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --paper:#EDF0F1; --panel:#F8FAFA; --ink:#1D2A31; --muted:#5F6E75; --rule:#CCD5D9;
+  --kataster:#1E6F5C; --kataster-ink:#ffffff; --frame:#C2452D;
+  --font:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --cond:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  box-sizing:border-box;
+}
+*,*::before,*::after{box-sizing:inherit}
+html,body{height:100%;margin:0}
+body{background:var(--paper);color:var(--ink);font:15px/1.5 var(--font);display:grid;grid-template-columns:380px 1fr;}
+aside{background:var(--panel);border-right:1px solid var(--rule);overflow-y:auto;padding:28px 26px 40px}
+h1{font:700 40px/1 var(--cond);margin:0 0 6px;letter-spacing:-.01em}
+.lede{color:var(--muted);margin:0 0 26px;max-width:32ch}
+section.step{border-top:1px solid var(--rule);padding:18px 0 20px;display:grid;grid-template-columns:28px 1fr;column-gap:10px}
+.num{font:700 22px/1 var(--cond);color:var(--kataster);padding-top:2px}
+h2{font:600 16px/1.3 var(--font);margin:0 0 10px}
+label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+input[type=text],input[type=number]{width:100%;font:inherit;color:var(--ink);background:#fff;border:1px solid var(--rule);border-radius:4px;padding:8px 10px}
+input[type=range]{width:100%;accent-color:var(--kataster)}
+.row{display:flex;gap:8px;align-items:center}
+.row > *{flex:1}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}
+.val{font-variant-numeric:tabular-nums;color:var(--ink);font-weight:500}
+button{font:600 15px var(--font);border:0;border-radius:4px;padding:10px 14px;cursor:pointer}
+button.primary{background:var(--kataster);color:var(--kataster-ink);width:100%;padding:13px}
+button.ghost{background:transparent;border:1px solid var(--rule);color:var(--ink);flex:0 0 auto}
+button:disabled{opacity:.45;cursor:not-allowed}
+button:focus-visible,input:focus-visible,a:focus-visible{outline:2px solid var(--frame);outline-offset:2px}
+.check{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink);margin:6px 0}
+.check input{accent-color:var(--kataster)}
+.swatches{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:4px}
+.sw{display:flex;flex-direction:column;align-items:center;font-size:12px;color:var(--muted)}
+.sw input{width:100%;height:34px;border:1px solid var(--rule);border-radius:4px;padding:2px;background:#fff}
+.hint{font-size:13px;color:var(--muted);margin:8px 0 0}
+#status{font-size:14px;margin:14px 0 0;min-height:1.5em}
+#status.err{color:var(--frame)}
+main{position:relative;display:grid;grid-template-rows:auto 1fr;min-height:0}
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule);background:var(--panel);padding:0 18px}
+.tab{background:none;border-radius:0;padding:14px 16px 12px;color:var(--muted);border-bottom:3px solid transparent}
+.tab[aria-selected=true]{color:var(--ink);border-bottom-color:var(--kataster)}
+.view{position:absolute;inset:49px 0 0 0}
+#map{height:100%}
+#viewer{display:none;height:100%;background:radial-gradient(ellipse at 50% 40%,#fff 0%,#DDE3E6 80%)}
+#viewer canvas{display:block}
+#dl{position:absolute;right:18px;bottom:18px;display:none;gap:10px}
+#dl button{box-shadow:0 2px 10px rgba(29,42,49,.18)}
+.stats{position:absolute;left:18px;bottom:18px;background:rgba(248,250,250,.92);border:1px solid var(--rule);border-radius:4px;padding:8px 12px;font-size:13px;display:none}
+.attr{font-size:11px;color:var(--muted);margin-top:24px}
+@media (max-width:860px){
+  body{grid-template-columns:1fr;grid-template-rows:auto 70vh;height:auto}
+  aside{border-right:0;border-bottom:1px solid var(--rule)}
+  main{order:-1;min-height:70vh}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<aside>
+  <h1>Ortsmodell</h1>
+  <p class="lede">Ein Kartenausschnitt wird zum mehrfarbig druckbaren 3D-Modell – mit echten Dachformen aus dem amtlichen LoD2-Gebäudemodell Niedersachsen.</p>
+
+  <section class="step"><div class="num">1</div><div>
+    <h2>Ort suchen</h2>
+    <div class="row"><input id="q" type="text" value="48480 Spelle" aria-label="Adresse oder Ort"><button class="ghost" id="go">Suchen</button></div>
+    <p class="hint">Oder direkt in die Karte klicken, um den Mittelpunkt zu setzen.</p>
+  </div></section>
+
+  <section class="step"><div class="num">2</div><div>
+    <h2>Ausschnitt</h2>
+    <label for="size">Kantenlänge in der Realität: <span class="val" id="sizeV"></span></label>
+    <input id="size" type="range" min="200" max="3000" step="50" value="1200">
+    <p class="hint" id="scaleHint"></p>
+  </div></section>
+
+  <section class="step"><div class="num">3</div><div>
+    <h2>Druck</h2>
+    <div class="grid2">
+      <div><label for="modelMM">Modellgröße (mm)</label><input id="modelMM" type="number" value="150" min="40" max="250"></div>
+      <div><label for="baseMM">Sockel (mm)</label><input id="baseMM" type="number" value="3" step="0.2" min="1"></div>
+      <div><label for="ex">Gebäude-Überhöhung</label><input id="ex" type="number" value="2" step="0.25" min="1" max="5"></div>
+      <div><label for="minLine">Min. Linienbreite (mm)</label><input id="minLine" type="number" value="0.6" step="0.1" min="0.4"></div>
+      <div><label for="roadMM">Straßen +mm</label><input id="roadMM" type="number" value="0.6" step="0.2" min="0.2"></div>
+      <div><label for="greenMM">Grün +mm</label><input id="greenMM" type="number" value="1.0" step="0.2" min="0.2"></div>
+      <div><label for="waterMM">Wasser +mm</label><input id="waterMM" type="number" value="0.4" step="0.2" min="0.2"></div>
+    </div>
+    <label>Farben</label>
+    <div class="swatches">
+      <div class="sw"><input type="color" id="cBase" value="#E6DAC0" aria-label="Farbe Sockel">Sockel</div>
+      <div class="sw"><input type="color" id="cBld" value="#FFFFFF" aria-label="Farbe Gebäude">Gebäude</div>
+      <div class="sw"><input type="color" id="cRoad" value="#CFCAC1" aria-label="Farbe Straßen">Straßen</div>
+      <div class="sw"><input type="color" id="cGreen" value="#5E9B57" aria-label="Farbe Grün">Grün</div>
+      <div class="sw"><input type="color" id="cWater" value="#6FA4D4" aria-label="Farbe Wasser">Wasser</div>
+    </div>
+    <label>Inhalt</label>
+    <div class="check"><input type="checkbox" id="oPaths"><span>Fuß- und Radwege</span></div>
+    <div class="check"><input type="checkbox" id="oTracks"><span>Feldwege</span></div>
+    <div class="check"><input type="checkbox" id="oDitch"><span>Gräben</span></div>
+    <div class="check"><input type="checkbox" id="oFields"><span>Äcker grün einfärben</span></div>
+  </div></section>
+
+  <section class="step"><div class="num">4</div><div>
+    <h2>Modell erzeugen</h2>
+    <button class="primary" id="build">Modell erzeugen</button>
+    <div id="status" role="status"></div>
+  </div></section>
+
+  <p class="attr">Gebäude: © LGLN, CC BY 4.0 · Straßen, Wasser, Grün: © OpenStreetMap-Mitwirkende, ODbL</p>
+</aside>
+
+<main>
+  <div class="tabs" role="tablist">
+    <button class="tab" role="tab" id="tMap" aria-selected="true">Karte</button>
+    <button class="tab" role="tab" id="t3d" aria-selected="false" disabled>3D-Vorschau</button>
+  </div>
+  <div class="view"><div id="map"></div><div id="viewer"></div></div>
+  <div class="stats" id="stats"></div>
+  <div id="dl"><button class="primary" id="dl3mf">3MF herunterladen</button></div>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/proj4@2.11.0/dist/proj4.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@turf/turf@7.1.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+<script>
+// ===== Stadtmodell-Kern: LoD2 (LGLN) + OSM -> farbige Druckteile -> 3MF =====
+const UTM32 = '+proj=utm +zone=32 +ellps=GRS80 +units=m +no_defs';
+const LOD2_BASE = 'https://lod2.s3.eu-de.cloud-object-storage.appdomain.cloud/';
+
+function toUTM(lon, lat) { return proj4('EPSG:4326', UTM32, [lon, lat]); }
+function toLL(e, n) { return proj4(UTM32, 'EPSG:4326', [e, n]); }
+
+// Quadrat in UTM-Metern um einen Mittelpunkt
+function makeSquare(lat, lon, sizeM) {
+  const [e, n] = toUTM(lon, lat);
+  const h = sizeM / 2;
+  return { e0: e - h, n0: n - h, e1: e + h, n1: n + h, size: sizeM };
+}
+function squareLatLngs(sq) {
+  return [[sq.e0, sq.n0], [sq.e1, sq.n0], [sq.e1, sq.n1], [sq.e0, sq.n1]]
+    .map(([e, n]) => { const [lo, la] = toLL(e, n); return [la, lo]; });
+}
+function squareBBoxLL(sq, padM = 40) {
+  const pts = [[sq.e0 - padM, sq.n0 - padM], [sq.e1 + padM, sq.n0 - padM],
+               [sq.e1 + padM, sq.n1 + padM], [sq.e0 - padM, sq.n1 + padM]].map(([e, n]) => toLL(e, n));
+  const lons = pts.map(p => p[0]), lats = pts.map(p => p[1]);
+  return { s: Math.min(...lats), w: Math.min(...lons), n: Math.max(...lats), e: Math.max(...lons) };
+}
+
+// 1x1-km-Kacheln des LGLN, die das Quadrat berühren
+function tilesFor(sq) {
+  const out = [];
+  for (let i = Math.floor(sq.e0 / 1000); i <= Math.floor((sq.e1 - 1e-6) / 1000); i++)
+    for (let j = Math.floor(sq.n0 / 1000); j <= Math.floor((sq.n1 - 1e-6) / 1000); j++) {
+      const name = `LoD2_32_${i}_${j}_1_ni`;
+      out.push({ name, url: `${LOD2_BASE}${name}.gml` });
+    }
+  return out;
+}
+
+// ---------- CityGML-Parser (regex-basiert, robust gegen Präfixe) ----------
+function parseRing(txt) {
+  let nums = [];
+  const pl = txt.match(/<(?:[\w-]+:)?posList[^>]*>([^<]*)</);
+  if (pl) nums = pl[1].trim().split(/\s+/).map(Number);
+  else {
+    let m;
+    const re2 = /<(?:[\w-]+:)?pos(?:\s[^>]*)?>([^<]*)</g;
+    while ((m = re2.exec(txt))) nums.push(...m[1].trim().split(/\s+/).map(Number));
+  }
+  const pts = [];
+  for (let k = 0; k + 2 < nums.length; k += 3) {
+    let e = nums[k];
+    if (e > 1e6) e -= 32e6; // Zonenpräfix entfernen
+    pts.push([e, nums[k + 1], nums[k + 2]]);
+  }
+  if (pts.length > 1) {
+    const a = pts[0], b = pts[pts.length - 1];
+    if (a[0] === b[0] && a[1] === b[1] && a[2] === b[2]) pts.pop();
+  }
+  return pts;
+}
+
+function parseCityGML(text) {
+  const buildings = [];
+  const bRe = /<(?:[\w-]+:)?Building[\s>][\s\S]*?<\/(?:[\w-]+:)?Building>/g;
+  let bm;
+  while ((bm = bRe.exec(text))) {
+    const chunk = bm[0];
+    const polys = [], seen = new Set();
+    const pRe = /<(?:[\w-]+:)?Polygon[\s>][\s\S]*?<\/(?:[\w-]+:)?Polygon>/g;
+    let pm;
+    while ((pm = pRe.exec(chunk))) {
+      const p = pm[0];
+      const ext = p.match(/<(?:[\w-]+:)?exterior>[\s\S]*?<\/(?:[\w-]+:)?exterior>/);
+      if (!ext) continue;
+      const outer = parseRing(ext[0]);
+      if (outer.length < 3) continue;
+      const key = outer.slice(0, 3).map(v => v.join(',')).join('|') + outer.length;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      const holes = [];
+      const iRe = /<(?:[\w-]+:)?interior>[\s\S]*?<\/(?:[\w-]+:)?interior>/g; let im;
+      while ((im = iRe.exec(p))) { const r = parseRing(im[0]); if (r.length >= 3) holes.push(r); }
+      polys.push([outer, ...holes]);
+    }
+    if (polys.length) buildings.push({ polys });
+  }
+  return buildings;
+}
+
+// ---------- Mesh-Helfer ----------
+class Mesh {
+  constructor(name, color) { this.name = name; this.color = color; this.v = []; this.t = []; this.map = new Map(); }
+  vert(x, y, z) {
+    const k = `${Math.round(x * 1e4)},${Math.round(y * 1e4)},${Math.round(z * 1e4)}`;
+    let i = this.map.get(k);
+    if (i === undefined) { i = this.v.length / 3; this.v.push(x, y, z); this.map.set(k, i); }
+    return i;
+  }
+  tri(a, b, c) { if (a !== b && b !== c && a !== c) this.t.push(a, b, c); }
+  get triCount() { return this.t.length / 3; }
+}
+
+function newell(r) {
+  let nx = 0, ny = 0, nz = 0;
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i], b = r[(i + 1) % r.length];
+    nx += (a[1] - b[1]) * (a[2] + b[2]);
+    ny += (a[2] - b[2]) * (a[0] + b[0]);
+    nz += (a[0] - b[0]) * (a[1] + b[1]);
+  }
+  const l = Math.hypot(nx, ny, nz);
+  return l < 1e-9 ? null : [nx / l, ny / l, nz / l];
+}
+const V2 = (x, y) => new THREE.Vector2(x, y);
+
+// Planares 3D-Polygon (mit Löchern) triangulieren, Dreiecke entlang n ausrichten
+function triangulate3D(rings, n) {
+  const ax = Math.abs(n[0]), ay = Math.abs(n[1]), az = Math.abs(n[2]);
+  const proj = az >= ax && az >= ay ? p => V2(p[0], p[1]) : ax >= ay ? p => V2(p[1], p[2]) : p => V2(p[0], p[2]);
+  const flat = rings.flat();
+  let tris;
+  try { tris = THREE.ShapeUtils.triangulateShape(rings[0].map(proj), rings.slice(1).map(r => r.map(proj))); }
+  catch (e) { return []; }
+  const out = [];
+  for (const [i, j, k] of tris) {
+    const A = flat[i], B = flat[j], C = flat[k];
+    if (!A || !B || !C) continue;
+    const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], v = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+    const c = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+    const d = c[0] * n[0] + c[1] * n[1] + c[2] * n[2];
+    out.push(d >= 0 ? [A, B, C] : [A, C, B]);
+  }
+  return out;
+}
+
+// Gebäude -> Mesh (mm). Gibt Mesh, Grundrisse (lokale Meter) und Anzahl zurück
+function buildBuildings(buildings, sq, P, color) {
+  const s = P.modelMM / sq.size, T = P.baseMM, ex = P.exaggeration;
+  const mesh = new Mesh('Gebäude', color);
+  const footprints = [];
+  let count = 0;
+  for (const b of buildings) {
+    let inside = true, gz = Infinity;
+    for (const poly of b.polys) for (const r of poly) for (const p of r) {
+      if (p[0] < sq.e0 - 0.05 || p[0] > sq.e1 + 0.05 || p[1] < sq.n0 - 0.05 || p[1] > sq.n1 + 0.05) inside = false;
+      if (p[2] < gz) gz = p[2];
+    }
+    if (!inside) continue;
+    let maxH = 0;
+    for (const poly of b.polys) for (const r of poly) for (const p of r) maxH = Math.max(maxH, p[2] - gz);
+    // sehr flache Objekte (Carports etc.) auf Mindesthöhe anheben
+    const hScale = maxH * s * ex < P.minBuildingMM && maxH > 0 ? P.minBuildingMM / (maxH * s) : ex;
+    const toM = p => [(p[0] - sq.e0) * s, (p[1] - sq.n0) * s, T + Math.max(0, p[2] - gz) * s * hScale];
+    count++;
+    for (const poly of b.polys) {
+      let n = newell(poly[0]);
+      if (!n) continue;
+      const isGround = poly[0].every(p => p[2] - gz < 0.3);
+      if (Math.abs(n[2]) > 0.3) {
+        const want = isGround ? -1 : 1;
+        if (Math.sign(n[2]) !== want) n = n.map(x => -x);
+      }
+      if (isGround && Math.abs(n[2]) > 0.9)
+        footprints.push(poly.map(r => { const ring = r.map(p => [p[0] - sq.e0, p[1] - sq.n0]); ring.push(ring[0]); return ring; }));
+      const tris = triangulate3D(poly.map(r => r.map(toM)), n);
+      for (const [A, B, C] of tris) mesh.tri(mesh.vert(...A), mesh.vert(...B), mesh.vert(...C));
+    }
+  }
+  return { mesh, footprints, count };
+}
+
+// ---------- OSM / Overpass ----------
+function overpassQuery(bb) {
+  const B = `(${bb.s.toFixed(6)},${bb.w.toFixed(6)},${bb.n.toFixed(6)},${bb.e.toFixed(6)})`;
+  const g = '"^(forest|grass|meadow|recreation_ground|village_green|cemetery|allotments|orchard|farmland|greenfield)$"';
+  return `[out:json][timeout:90];(
+way["highway"]${B};
+way["railway"~"^(rail|light_rail|tram|narrow_gauge)$"]${B};
+way["natural"="water"]${B};relation["natural"="water"]${B};
+way["waterway"]${B};relation["waterway"="riverbank"]${B};
+way["landuse"~"^(reservoir|basin)$"]${B};
+way["landuse"~${g}]${B};relation["landuse"~${g}]${B};
+way["leisure"~"^(park|garden|pitch|playground|golf_course|nature_reserve|sports_centre)$"]${B};
+relation["leisure"~"^(park|garden|golf_course|nature_reserve)$"]${B};
+way["natural"~"^(wood|scrub|grassland|heath|wetland)$"]${B};relation["natural"~"^(wood|scrub|grassland|heath|wetland)$"]${B};
+);out geom;`;
+}
+
+const ROAD_W = { motorway: 16, trunk: 12, primary: 10, secondary: 8, tertiary: 7, unclassified: 5, residential: 5,
+  living_street: 4.5, service: 3.5, pedestrian: 4, track: 3, footway: 2, cycleway: 2, path: 1.8, steps: 2, bridleway: 2 };
+const WATERWAY_W = { river: 18, canal: 14, stream: 3, ditch: 1.6, drain: 1.6 };
+
+function classify(tags, P) {
+  if (!tags) return null;
+  if (tags.highway) {
+    const base = tags.highway.replace('_link', '');
+    let w = ROAD_W[base];
+    if (!w) return null;
+    if (['footway', 'cycleway', 'path', 'steps', 'bridleway'].includes(base) && !P.paths) return null;
+    if (base === 'track' && !P.tracks) return null;
+    if (tags.tunnel && tags.tunnel !== 'no') return null;
+    return { kind: 'roadline', w };
+  }
+  if (tags.railway) return tags.tunnel && tags.tunnel !== 'no' ? null : { kind: 'roadline', w: 4 };
+  if (tags.natural === 'water' || tags.waterway === 'riverbank' || ['reservoir', 'basin'].includes(tags.landuse)) return { kind: 'water' };
+  if (tags.waterway && WATERWAY_W[tags.waterway]) {
+    if (tags.tunnel === 'culvert' || (tags.tunnel && tags.tunnel !== 'no')) return null;
+    if (['ditch', 'drain'].includes(tags.waterway) && !P.ditches) return null;
+    return { kind: 'waterline', w: WATERWAY_W[tags.waterway] };
+  }
+  if (tags.landuse === 'farmland' || tags.landuse === 'greenfield') return P.fields ? { kind: 'green' } : null;
+  if (tags.landuse || tags.leisure || tags.natural) return { kind: 'green' };
+  return null;
+}
+
+// Wege zu geschlossenen Ringen zusammensetzen (Multipolygon-Relationen)
+function stitch(lines) {
+  const key = p => `${p[0].toFixed(7)},${p[1].toFixed(7)}`;
+  const rings = [], pool = lines.map(l => l.slice());
+  while (pool.length) {
+    let cur = pool.shift();
+    let guard = 0;
+    while (key(cur[0]) !== key(cur[cur.length - 1]) && guard++ < 10000) {
+      const end = key(cur[cur.length - 1]);
+      const idx = pool.findIndex(l => key(l[0]) === end || key(l[l.length - 1]) === end);
+      if (idx < 0) break;
+      let nx = pool.splice(idx, 1)[0];
+      if (key(nx[0]) !== end) nx = nx.reverse();
+      cur = cur.concat(nx.slice(1));
+    }
+    if (cur.length >= 4 && key(cur[0]) === key(cur[cur.length - 1])) rings.push(cur);
+  }
+  return rings;
+}
+
+// lon/lat -> lokale Meter im Quadrat
+function llToLocal(sq) { return ([lon, lat]) => { const [e, n] = toUTM(lon, lat); return [e - sq.e0, n - sq.n0]; }; }
+
+function osmToLayers(osm, sq, P) {
+  const L = llToLocal(sq);
+  const water = [], green = [], roadLines = {}, waterLines = {};
+  const minW = P.minLineMM / (P.modelMM / sq.size); // Mindestbreite in Metern
+  for (const el of osm.elements || []) {
+    const c = classify(el.tags, P);
+    if (!c) continue;
+    if (el.type === 'way' && el.geometry) {
+      const ll = el.geometry.map(g => [g.lon, g.lat]);
+      if (c.kind === 'roadline' || c.kind === 'waterline') {
+        const w = Math.max(c.w, minW);
+        const bucket = c.kind === 'roadline' ? roadLines : waterLines;
+        (bucket[w] = bucket[w] || []).push(ll);
+      } else if (ll.length >= 4 && ll[0][0] === ll[ll.length - 1][0] && ll[0][1] === ll[ll.length - 1][1]) {
+        (c.kind === 'water' ? water : green).push([ll.map(L)]);
+      }
+    } else if (el.type === 'relation' && el.members && (c.kind === 'water' || c.kind === 'green')) {
+      const outers = stitch(el.members.filter(m => m.type === 'way' && m.geometry && m.role !== 'inner').map(m => m.geometry.map(g => [g.lon, g.lat])));
+      const inners = stitch(el.members.filter(m => m.type === 'way' && m.geometry && m.role === 'inner').map(m => m.geometry.map(g => [g.lon, g.lat])));
+      if (!outers.length) continue;
+      let geom = pcUnion(outers.map(r => [r.map(L)]));
+      if (inners.length) geom = polygonClipping.difference(geom, ...inners.map(r => [r.map(L)]));
+      (c.kind === 'water' ? water : green).push(...geom);
+    }
+  }
+  const bufferAll = buckets => {
+    const out = [];
+    for (const [w, lines] of Object.entries(buckets)) {
+      const f = turf.buffer(turf.multiLineString(lines), Number(w) / 2, { units: 'meters', steps: 4 });
+      if (!f) continue;
+      const g = f.geometry;
+      const polys = g.type === 'Polygon' ? [g.coordinates] : g.coordinates;
+      for (const p of polys) out.push(p.map(r => r.map(L)));
+    }
+    return out;
+  };
+  return { water: water.concat(bufferAll(waterLines)), green, roads: bufferAll(roadLines) };
+}
+
+function pcUnion(list) {
+  if (!list.length) return [];
+  let acc = [];
+  for (let i = 0; i < list.length; i += 400) acc = polygonClipping.union(acc, ...list.slice(i, i + 400));
+  return acc;
+}
+function ringArea(r) { let a = 0; for (let i = 0; i < r.length - 1; i++) a += r[i][0] * r[i + 1][1] - r[i + 1][0] * r[i][1]; return a / 2; }
+
+// Flächen bereinigen: zuschneiden, überlappungsfrei machen, Splitter entfernen
+function cleanLayers(raw, footprints, sq, P) {
+  const W = sq.size, box = [[[0, 0], [W, 0], [W, W], [0, W], [0, 0]]];
+  const clip = g => g.length ? polygonClipping.intersection(g, box) : [];
+  const F = pcUnion(footprints);
+  let roads = clip(pcUnion(raw.roads));
+  let water = clip(pcUnion(raw.water));
+  let green = clip(pcUnion(raw.green));
+  const sub = (a, ...bs) => { bs = bs.filter(b => b.length); return a.length && bs.length ? polygonClipping.difference(a, ...bs) : a; };
+  water = sub(water, roads, F);       // Brücken: Straße gewinnt
+  roads = sub(roads, F);
+  green = sub(green, roads, water, F);
+  const minA = Math.pow(P.minLineMM / (P.modelMM / sq.size), 2);
+  const filt = mp => mp.filter(p => Math.abs(ringArea(p[0])) > minA);
+  return { roads: filt(roads), water: filt(water), green: filt(green) };
+}
+
+// 2D-Multipolygon (lokale Meter) als Platte z0..z1 (mm) extrudieren
+function extrude(mp, z0, z1, s, mesh) {
+  for (const poly of mp) {
+    const rings = poly.map((r, i) => {
+      let pts = r.slice(0, -1).map(p => [p[0] * s, p[1] * s]);
+      const a = ringArea(r);
+      if ((i === 0 && a < 0) || (i > 0 && a > 0)) pts = pts.reverse();
+      return pts;
+    }).filter(r => r.length >= 3);
+    if (!rings.length) continue;
+    let tris;
+    try { tris = THREE.ShapeUtils.triangulateShape(rings[0].map(p => V2(...p)), rings.slice(1).map(r => r.map(p => V2(...p)))); }
+    catch (e) { continue; }
+    const flat = rings.flat();
+    for (let [i, j, k] of tris) {
+      const A = flat[i], B = flat[j], C = flat[k];
+      if ((B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]) < 0) [j, k] = [k, j];
+      const a = flat[i], b = flat[j], c = flat[k];
+      mesh.tri(mesh.vert(a[0], a[1], z1), mesh.vert(b[0], b[1], z1), mesh.vert(c[0], c[1], z1));
+      mesh.tri(mesh.vert(a[0], a[1], z0), mesh.vert(c[0], c[1], z0), mesh.vert(b[0], b[1], z0));
+    }
+    for (const r of rings) for (let i = 0; i < r.length; i++) {
+      const a = r[i], b = r[(i + 1) % r.length];
+      const a0 = mesh.vert(a[0], a[1], z0), b0 = mesh.vert(b[0], b[1], z0), b1 = mesh.vert(b[0], b[1], z1), a1 = mesh.vert(a[0], a[1], z1);
+      mesh.tri(a0, b0, b1); mesh.tri(a0, b1, a1);
+    }
+  }
+  return mesh;
+}
+
+function buildAll(buildings, osm, sq, P, colors) {
+  const s = P.modelMM / sq.size, W = sq.size, T = P.baseMM;
+  const B = buildBuildings(buildings, sq, P, colors.buildings);
+  const raw = osm ? osmToLayers(osm, sq, P) : { roads: [], water: [], green: [] };
+  const L = cleanLayers(raw, B.footprints, sq, P);
+  const base = extrude([[[[0, 0], [W, 0], [W, W], [0, W], [0, 0]]]], 0, T, s, new Mesh('Sockel', colors.base));
+  const water = extrude(L.water, T, T + P.waterMM, s, new Mesh('Wasser', colors.water));
+  const roads = extrude(L.roads, T, T + P.roadMM, s, new Mesh('Straßen', colors.roads));
+  const green = extrude(L.green, T, T + P.greenMM, s, new Mesh('Grün', colors.green));
+  return { meshes: [base, B.mesh, roads, green, water].filter(m => m.triCount), buildingCount: B.count };
+}
+
+// ---------- 3MF ----------
+function make3MF(meshes) {
+  const hex = c => c.toUpperCase() + (c.length === 7 ? 'FF' : '');
+  const parts = [];
+  parts.push('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="de-DE" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n<metadata name="Title">Stadtmodell</metadata>\n<resources>\n<basematerials id="1">');
+  meshes.forEach(m => parts.push(`<base name="${m.name}" displaycolor="${hex(m.color)}"/>`));
+  parts.push('</basematerials>');
+  meshes.forEach((m, idx) => {
+    parts.push(`<object id="${idx + 2}" type="model" name="${m.name}" pid="1" pindex="${idx}"><mesh><vertices>`);
+    const v = m.v, vs = [];
+    for (let i = 0; i < v.length; i += 3) vs.push(`<vertex x="${v[i].toFixed(4)}" y="${v[i + 1].toFixed(4)}" z="${v[i + 2].toFixed(4)}"/>`);
+    parts.push(vs.join(''), '</vertices><triangles>');
+    const t = m.t, ts = [];
+    for (let i = 0; i < t.length; i += 3) ts.push(`<triangle v1="${t[i]}" v2="${t[i + 1]}" v3="${t[i + 2]}"/>`);
+    parts.push(ts.join(''), '</triangles></mesh></object>');
+  });
+  parts.push('</resources>\n<build>');
+  meshes.forEach((m, idx) => parts.push(`<item objectid="${idx + 2}"/>`));
+  parts.push('</build>\n</model>');
+  const enc = s => fflate.strToU8(s);
+  return fflate.zipSync({
+    '[Content_Types].xml': enc('<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>'),
+    '_rels/.rels': enc('<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>'),
+    '3D/3dmodel.model': enc(parts.join('')),
+  }, { level: 6 });
+}
+
+if (typeof module !== 'undefined' && module.exports) module.exports = { makeSquare, squareLatLngs, squareBBoxLL, tilesFor, parseCityGML, buildAll, make3MF, overpassQuery, Mesh };
+
+</script>
+<script>
+(() => {
+const $ = id => document.getElementById(id);
+const PROXY = 'https://hgpevkylnrqodqirxyie.supabase.co/functions/v1/geodata';
+const NET_ERR = 'Keine Verbindung zum Datendienst. Prüfe die Internetverbindung. Falls du die Datei in der Vorschau einer App geöffnet hast, öffne sie im Browser (Safari, Chrome).';
+const state = { lat: 52.3669, lon: 7.4637, sq: null, tileCache: new Map(), result: null };
+
+// ---------- Karte ----------
+const map = L.map('map', { zoomControl: true }).setView([state.lat, state.lon], 14);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+const frame = L.polygon([], { color: '#C2452D', weight: 2.5, fillOpacity: 0.06 }).addTo(map);
+const pin = L.marker([state.lat, state.lon], { draggable: true, keyboard: true, title: 'Mittelpunkt verschieben' }).addTo(map);
+
+function updateSquare(fit) {
+  const size = +$('size').value;
+  state.sq = makeSquare(state.lat, state.lon, size);
+  frame.setLatLngs(squareLatLngs(state.sq));
+  pin.setLatLng([state.lat, state.lon]);
+  $('sizeV').textContent = size >= 1000 ? (size / 1000).toLocaleString('de-DE') + ' km' : size + ' m';
+  const mm = +$('modelMM').value;
+  $('scaleHint').textContent = `Maßstab ca. 1 : ${Math.round(size * 1000 / mm).toLocaleString('de-DE')} · ${tilesFor(state.sq).length} LoD2-Kachel(n)`;
+  if (fit) map.fitBounds(frame.getBounds(), { padding: [30, 30] });
+}
+map.on('click', e => { state.lat = e.latlng.lat; state.lon = e.latlng.lng; updateSquare(); });
+pin.on('dragend', () => { const p = pin.getLatLng(); state.lat = p.lat; state.lon = p.lng; updateSquare(); });
+$('size').addEventListener('input', () => updateSquare());
+$('modelMM').addEventListener('input', () => updateSquare());
+
+async function search() {
+  const q = $('q').value.trim(); if (!q) return;
+  setStatus('Suche …');
+  try {
+    const r = await fetch(`${PROXY}?op=geocode&q=${encodeURIComponent(q)}`);
+    const j = await r.json();
+    if (!j.length) return setStatus('Kein Treffer. Versuche es mit PLZ und Ort.', true);
+    state.lat = +j[0].lat; state.lon = +j[0].lon; updateSquare(true); setStatus('');
+  } catch (e) { setStatus(NET_ERR, true); }
+}
+$('go').onclick = search;
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') search(); });
+
+function setStatus(t, err) { $('status').textContent = t; $('status').className = err ? 'err' : ''; }
+
+// ---------- Tabs ----------
+function showTab(which) {
+  $('tMap').setAttribute('aria-selected', which === 'map');
+  $('t3d').setAttribute('aria-selected', which === '3d');
+  $('map').style.display = which === 'map' ? 'block' : 'none';
+  $('viewer').style.display = which === '3d' ? 'block' : 'none';
+  $('dl').style.display = which === '3d' && state.result ? 'flex' : 'none';
+  $('stats').style.display = which === '3d' && state.result ? 'block' : 'none';
+  if (which === 'map') map.invalidateSize(); else resizeViewer();
+}
+$('tMap').onclick = () => showTab('map');
+$('t3d').onclick = () => showTab('3d');
+
+// ---------- Daten laden ----------
+async function fetchTile(t, sq) {
+  const key = t.name + '|' + [sq.e0, sq.n0, sq.size].map(v => Math.round(v)).join('|');
+  if (state.tileCache.has(key)) return state.tileCache.get(key);
+  const q = `op=tile&name=${t.name}&e0=${sq.e0.toFixed(2)}&n0=${sq.n0.toFixed(2)}&e1=${sq.e1.toFixed(2)}&n1=${sq.n1.toFixed(2)}`;
+  let r, last;
+  for (let i = 0; i < 3; i++) {
+    try { r = await fetch(`${PROXY}?${q}`); if (r.ok) break; last = new Error('Gebäudedienst antwortet mit ' + r.status); }
+    catch (e) { last = new Error('NET'); }
+    await new Promise(res => setTimeout(res, 800 * (i + 1)));
+  }
+  if (!r || !r.ok) throw last;
+  const j = await r.json();
+  const [e0, n0] = [+sq.e0.toFixed(2), +sq.n0.toFixed(2)];
+  const out = { missing: !!j.missing, buildings: j.b.map(polys => ({ polys: polys.map(rings => rings.map(flat => {
+    const pts = []; for (let k = 0; k < flat.length; k += 3) pts.push([e0 + flat[k] / 100, n0 + flat[k + 1] / 100, flat[k + 2] / 100]);
+    return pts; })) })) };
+  state.tileCache.set(key, out);
+  return out;
+}
+async function fetchOSM(sq) {
+  const body = 'data=' + encodeURIComponent(overpassQuery(squareBBoxLL(sq)));
+  let r;
+  try { r = await fetch(`${PROXY}?op=overpass`, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } }); }
+  catch (e) { throw new Error('NET'); }
+  if (!r.ok) throw new Error('Overpass');
+  return r.json();
+}
+
+
+function params() {
+  return {
+    modelMM: +$('modelMM').value, baseMM: +$('baseMM').value, exaggeration: +$('ex').value,
+    minBuildingMM: 0.6, minLineMM: +$('minLine').value,
+    roadMM: +$('roadMM').value, greenMM: +$('greenMM').value, waterMM: +$('waterMM').value,
+    paths: $('oPaths').checked, tracks: $('oTracks').checked, ditches: $('oDitch').checked, fields: $('oFields').checked,
+  };
+}
+function colors() {
+  return { base: $('cBase').value, buildings: $('cBld').value, roads: $('cRoad').value, green: $('cGreen').value, water: $('cWater').value };
+}
+
+let osmCache = { key: null, data: null };
+async function run() {
+  const sq = state.sq, tiles = tilesFor(sq);
+  $('build').disabled = true;
+  try {
+    let done = 0;
+    setStatus(`Lade Gebäude (0 von ${tiles.length} Kacheln) …`);
+    const tileData = await Promise.all(tiles.map(t => fetchTile(t, sq).then(d => { setStatus(`Lade Gebäude (${++done} von ${tiles.length} Kacheln) …`); return d; })));
+    const missing = tileData.filter(d => d.missing).length;
+    const key = [sq.e0, sq.n0, sq.size].map(Math.round).join('|') + JSON.stringify([params().paths, params().tracks, params().ditches, params().fields]);
+    if (osmCache.key !== key) {
+      setStatus('Lade Straßen, Wasser und Grünflächen aus OpenStreetMap …');
+      osmCache = { key, data: await fetchOSM(sq) };
+    }
+    setStatus('Berechne Geometrie …');
+    await new Promise(r => setTimeout(r, 30));
+    const buildings = tileData.flatMap(d => d.buildings);
+    const t0 = performance.now();
+    state.result = buildAll(buildings, osmCache.data, sq, params(), colors());
+    const tris = state.result.meshes.reduce((a, m) => a + m.triCount, 0);
+    setStatus(`Fertig in ${((performance.now() - t0) / 1000).toFixed(1)} s.` + (missing ? ` ${missing} Kachel(n) liegen außerhalb Niedersachsens, dort fehlen die Gebäude.` : ''));
+    $('stats').textContent = `${state.result.buildingCount.toLocaleString('de-DE')} Gebäude · ${tris.toLocaleString('de-DE')} Dreiecke · ${$('modelMM').value} × ${$('modelMM').value} mm`;
+    $('t3d').disabled = false;
+    showScene(state.result.meshes);
+    showTab('3d');
+  } catch (e) {
+    console.error(e);
+    setStatus(e.message === 'NET' ? NET_ERR : e.message === 'Overpass'
+      ? 'Der OpenStreetMap-Server ist ausgelastet. Versuche es in einer Minute erneut.'
+      : 'Fehler: ' + e.message, true);
+  } finally { $('build').disabled = false; }
+}
+$('build').onclick = run;
+
+// ---------- 3D-Vorschau ----------
+let renderer, scene, camera, controls, group;
+function initViewer() {
+  if (renderer) return;
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  $('viewer').appendChild(renderer.domElement);
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(35, 1, 1, 5000);
+  controls = new THREE.OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x8a9499, 0.75));
+  const sun = new THREE.DirectionalLight(0xffffff, 0.6); sun.position.set(-1, 2, 1.2); scene.add(sun);
+  (function loop() { requestAnimationFrame(loop); controls.update(); renderer.render(scene, camera); })();
+  addEventListener('resize', resizeViewer);
+}
+function resizeViewer() {
+  if (!renderer) return;
+  const el = $('viewer'), w = el.clientWidth, h = el.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h); camera.aspect = w / h; camera.updateProjectionMatrix();
+}
+function showScene(meshes) {
+  initViewer();
+  if (group) { scene.remove(group); group.traverse(o => { if (o.geometry) o.geometry.dispose(); }); }
+  group = new THREE.Group();
+  group.rotation.x = -Math.PI / 2; // Z-oben -> Y-oben
+  for (const m of meshes) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(m.v, 3));
+    g.setIndex(m.t);
+    const flat = g.toNonIndexed(); flat.computeVertexNormals(); g.dispose();
+    group.add(new THREE.Mesh(flat, new THREE.MeshLambertMaterial({ color: m.color })));
+  }
+  const S = +$('modelMM').value;
+  group.position.set(-S / 2, 0, S / 2);
+  scene.add(group);
+  camera.position.set(S * 0.55, S * 0.75, S * 1.05);
+  controls.target.set(0, 0, 0);
+  resizeViewer();
+}
+
+// ---------- Download ----------
+$('dl3mf').onclick = () => {
+  if (!state.result) return;
+  const blob = new Blob([make3MF(state.result.meshes)], { type: 'model/3mf' });
+  const a = document.createElement('a');
+  const place = $('q').value.trim().replace(/[^\wäöüÄÖÜß-]+/g, '_') || 'ort';
+  a.href = URL.createObjectURL(blob); a.download = `ortsmodell_${place}.3mf`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+};
+
+updateSquare(true);
+})();
+
+</script>
+</body>
+</html>
