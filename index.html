@@ -589,6 +589,15 @@ async function fetchTile(t, sq) {
 }
 async function fetchOSM(sq) {
   const body = 'data=' + encodeURIComponent(overpassQuery(squareBBoxLL(sq)));
+  // 1. Direkt vom Gerät: eigene IP, meist deutlich schneller als über den Server
+  for (const h of ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']) {
+    const c = new AbortController(), t = setTimeout(() => c.abort(), 40000);
+    try {
+      const r = await fetch(h, { method: 'POST', body, signal: c.signal, headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
+      if (r.ok) { const j = await r.json(); if (!(j.remark && /error/i.test(j.remark))) return j; }
+    } catch (e) { /* nächster Weg */ } finally { clearTimeout(t); }
+  }
+  // 2. Über den eigenen Dienst (mit Cache)
   for (let attempt = 1; attempt <= 6; attempt++) {
     let r = null;
     try { r = await fetch(`${PROXY}?op=overpass`, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } }); }
@@ -628,6 +637,8 @@ async function run() {
       setStatus('Lade Straßen, Wasser und Grünflächen aus OpenStreetMap …');
       osmCache = { key, data: await fetchOSM(sq) };
     }
+    const nOsm = (osmCache.data.elements || []).length;
+    if (!nOsm) { osmCache.key = null; throw new Error('Von OpenStreetMap kamen keine Daten zurück. Bitte erneut versuchen.'); }
     setStatus('Berechne Geometrie …');
     await new Promise(r => setTimeout(r, 30));
     const buildings = tileData.flatMap(d => d.buildings);
