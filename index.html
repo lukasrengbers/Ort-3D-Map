@@ -589,11 +589,16 @@ async function fetchTile(t, sq) {
 }
 async function fetchOSM(sq) {
   const body = 'data=' + encodeURIComponent(overpassQuery(squareBBoxLL(sq)));
-  let r;
-  try { r = await fetch(`${PROXY}?op=overpass`, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } }); }
-  catch (e) { throw new Error('NET'); }
-  if (!r.ok) throw new Error('Overpass');
-  return r.json();
+  for (let attempt = 1; attempt <= 6; attempt++) {
+    let r = null;
+    try { r = await fetch(`${PROXY}?op=overpass`, { method: 'POST', body, headers: { 'Content-Type': 'text/plain' } }); }
+    catch (e) { /* Zeitlimit des Browsers – Server arbeitet weiter */ }
+    if (r && r.status === 200) return r.json();
+    if (r && ![202, 503, 502, 504].includes(r.status)) throw new Error('Overpass');
+    setStatus(`OpenStreetMap-Server ist gerade langsam. Das Ergebnis wird im Hintergrund geladen … (${attempt}/6)`);
+    await new Promise(res => setTimeout(res, 4000));
+  }
+  throw new Error('Overpass');
 }
 
 
@@ -637,7 +642,7 @@ async function run() {
   } catch (e) {
     console.error(e);
     setStatus(e.message === 'NET' ? NET_ERR : e.message === 'Overpass'
-      ? 'Der OpenStreetMap-Server ist ausgelastet. Versuche es in einer Minute erneut.'
+      ? 'Die OpenStreetMap-Server sind gerade überlastet. Tippe in ein paar Minuten erneut auf „Modell erzeugen“ – bereits geladene Daten bleiben erhalten.'
       : 'Fehler: ' + e.message, true);
   } finally { $('build').disabled = false; }
 }
